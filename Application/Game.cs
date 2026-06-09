@@ -1,4 +1,4 @@
-﻿using BlackJack.Application.Interfaces;
+﻿using BlackJack.Application.Enums;
 using BlackJack.Domain.Entities;
 using BlackJack.Domain.Entities.Enums;
 using BlackJack.Domain.Entities.Helpers;
@@ -8,24 +8,36 @@ using BlackJack.Domain.Entities.Record;
 
 namespace BlackJack.Application
     {
-    internal class Game : IGame
+    internal class Game
         {
-        private readonly IPlayer _player;
-        private readonly ICrupier _crupier;
-        private readonly List<Card> _deck = [];
-        public IPlayer Player => _player;
-        public ICrupier Crupier => _crupier;
-        public NamePlayers CurrentPlayer => NamePlayers.Player;
-        public List<Card> Decks => _deck;
+        private static Game? _instance;
+        private static readonly IPlayer _player = new Player();
+        private static readonly ICrupier _crupier = new Crupier();
+        private static readonly List<Card> _deck = [];
 
-        public Game(Player player, Crupier crupier)
+        private Game()
             {
-            _player = player;
-            _crupier = crupier;
+            CurrentPlayer = NamePlayers.Player;
             GenerateDeck();
             }
 
-        private void GenerateDeck(int numberOfDecks = 6)
+        public static IPlayer Player => _player;
+        public static ICrupier Crupier => _crupier;
+        public static NamePlayers CurrentPlayer { get; set; }
+
+        public static List<Card> Decks => _deck;
+
+        public static void StartGame()
+            {
+            _instance ??= new Game();
+            }
+
+        public static void RestartGame()
+            {
+            _instance = new Game();
+            }
+
+        private static void GenerateDeck(int numberOfDecks = 6)
             {
             foreach (int _ in Enumerable.Range(0, numberOfDecks))
                 {
@@ -39,18 +51,19 @@ namespace BlackJack.Application
                 }
             }
 
-        public bool AddHand()
+        public static AddHandStatus AddHand()
             {
             int originalBet = Player.CasinoChipsLog[FlowCash.Income][0];
             bool hasPlayerEnoughCoins = originalBet <= Player.CasinoChips;
             IEnumerable<Card> cards = Helper.GetAllCardsFromHand(Player.CurrentHand, Player.HandOfCards).ToList();
 
-            if (!(hasPlayerEnoughCoins && cards.Any())) return false;
+            if (!(hasPlayerEnoughCoins && cards.Any())) return AddHandStatus.PlayerHasNotEnoughCoins;
 
             bool hasPlayerTwoCardsWithTheSameValue =
                 cards.GroupBy(x => x).Where(g => g.Count() > 1).Select(g => g.Key).Count() > 1;
 
-            if (!(hasPlayerTwoCardsWithTheSameValue && BetCasinoChips(originalBet))) return false;
+            if (!(hasPlayerTwoCardsWithTheSameValue && BetCasinoChips(originalBet)))
+                return AddHandStatus.PlayerHasNotTwoCards;
 
             int newHand = Player.HandOfCards.Last().Key + 1;
             Player.TranslateLastCardToNewHand(Player.CurrentHand, newHand);
@@ -58,10 +71,10 @@ namespace BlackJack.Application
             Player.ChangeHand(newHand);
             DealTheCard(CardVisibility.Hidden);
 
-            return true;
+            return AddHandStatus.Success;
             }
 
-        public bool BetCasinoChips(int casinoChips)
+        public static bool BetCasinoChips(int casinoChips)
             {
             bool hasPlayerEnoughCoins = casinoChips <= Player.CasinoChips;
             if (!hasPlayerEnoughCoins) return false;
@@ -69,24 +82,22 @@ namespace BlackJack.Application
             return true;
             }
 
-        private Card? GetCardFromDeck()
+        private static Card? GetCardFromDeck()
             {
             Random random = new();
             int cardIndex = random.Next(0, Decks.Count);
             return Decks[cardIndex];
             }
 
-        private void DiscardCardFromDeck(Card card)
+        private static void DiscardCardFromDeck(Card card)
             {
             Decks.Remove(card);
             }
 
-        public Card? DealTheCard(CardVisibility visibility, int? forcedAceValue = null)
+        public static Card? DealTheCard(CardVisibility visibility, Card? aceCard = null, int? forcedAceValue = null)
             {
-            Card? card = GetCardFromDeck();
+            Card? card = aceCard ?? GetCardFromDeck();
             if (card == null) return null;
-
-            int aceValue = forcedAceValue ?? 11;
 
             ICommonPlayer? current = CurrentPlayer switch
                 {
@@ -98,7 +109,8 @@ namespace BlackJack.Application
             Card actualCard = (Card)card;
             if (actualCard.Rank == CardRank.Ace)
                 {
-                current.AddValueAce(aceValue);
+                if (forcedAceValue == null) return actualCard;
+                if (!current.AddValueAce((int)forcedAceValue)) return null;
                 }
 
             current.AddCardToHand(current.CurrentHand, actualCard, visibility);
@@ -107,28 +119,29 @@ namespace BlackJack.Application
             return actualCard;
             }
 
-        public bool DuplicateBet()
+        public static DuplicateBetStatus DuplicateBet()
             {
             int duplicateBet = Player.CasinoChipsWagered * 2;
             bool hasPlayerEnoughCoins = duplicateBet <= Player.CasinoChips;
-            if (!hasPlayerEnoughCoins && BetCasinoChips(duplicateBet)) return false;
+            if (!hasPlayerEnoughCoins && BetCasinoChips(duplicateBet))
+                return DuplicateBetStatus.PlayerHasNotEnoughCoins;
             DealTheCard(CardVisibility.Hidden);
             Player.SetDoubleBet();
-            return true;
+            return DuplicateBetStatus.Success;
             }
 
-        public void PlayCards()
+        public static void PlayCards()
             {
             Player.UpdateVisibilityAllCards();
             Crupier.UpdateVisibilityAllCards();
             }
 
-        public void RequestCasinoChips(int casinoChips)
+        public static void RequestCasinoChips(int casinoChips)
             {
             Player.UpdateCasinoChips(+casinoChips, false);
             }
 
-        public void Surrender()
+        public static void Surrender()
             {
             Player.UpdateCasinoChips(+Player.CasinoChipsWagered / 2, true, true);
             }
@@ -161,13 +174,10 @@ namespace BlackJack.Application
             return totalValues;
             }
 
-        private void UpdateBet()
-            {
-            }
-
-        public void ValidateWinner()
+        public static List<WinnerStatus> ValidateWinner()
             {
             List<List<int>> valuesByHands = GetValuesByHands(Player);
+            List<WinnerStatus> listStatus = [];
             int crupierTotalValue = GetValuesByHands(Crupier)[0].Sum();
             int currentHand = 0;
             foreach (List<int> valuesByHand in valuesByHands)
@@ -186,23 +196,60 @@ namespace BlackJack.Application
                         {
                         int moreCasinoChips = (actualBetByHand / 2) * 3;
                         Player.UpdateCasinoChips(+actualBetByHand + moreCasinoChips, true);
+                        listStatus.Add(WinnerStatus.WinnerWithBlackJack);
                         }
                     else
                         {
                         Player.UpdateCasinoChips(+actualBetByHand * 2, true);
+                        listStatus.Add(WinnerStatus.Winner);
                         }
                     }
                 else if ((hasCrupierMoreScoreThanPlayer || hasPlayerMoreScoreThan21) && !hasCrupierMoreScoreThan21)
                     {
                     Player.UpdateCasinoChips(-actualBetByHand, true, true);
+                    listStatus.Add(WinnerStatus.Loser);
                     }
                 else if (hasPlayerAndCrupierTheSameScore)
                     {
                     Player.UpdateCasinoChips(-actualBetByHand, true);
+                    listStatus.Add(WinnerStatus.Draw);
                     }
 
                 currentHand++;
                 }
+
+            return listStatus;
+            }
+
+        public static void SetValueAceCards(List<Card> listCards)
+            {
+            for (var i = 0; i < listCards.Count; i++)
+                {
+                var card = listCards[i];
+                if (card.Rank != CardRank.Ace) continue;
+                do
+                    {
+                    int forcedAceValue;
+                    var random = new Random();
+                    forcedAceValue = random.Next(1, 12);
+                    if (DealTheCard(CardVisibility.Visible, card, forcedAceValue) == null) break;
+                    } while (true);
+                }
+            }
+
+        public static void CrupierDealTheCard(bool isInitial = true, int take = 2)
+            {
+            List<Card> listCards = [];
+            CurrentPlayer = NamePlayers.Crupier;
+            for (var i = 0; i < new int[take].Length; i++)
+                {
+                var card = DealTheCard(i == 0 || !isInitial ? CardVisibility.Visible : CardVisibility.Hidden);
+                if (card == null) return;
+                listCards.Add((Card)card);
+                }
+
+            SetValueAceCards(listCards);
+            CurrentPlayer = NamePlayers.Player;
             }
         }
     }

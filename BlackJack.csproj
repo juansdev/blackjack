@@ -8,15 +8,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="UI\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <EditorConfigFiles Remove="C:\Users\PC\source\repos\BlackJack\Application\.editorconfig" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="C:\Users\PC\source\repos\BlackJack\Application\.editorconfig" />
   </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Spectre.Console" Version="0.56.0"/>
+    </ItemGroup>
 
 </Project>
