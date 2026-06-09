@@ -6,9 +6,11 @@ namespace BlackJack.Domain.Entities.Common
 {
     public class CommonPlayer : ICommonPlayer
     {
-        private int _currentHand;
         private readonly List<int> _aceValues = [];
         private readonly Dictionary<int, Dictionary<CardVisibility, List<Card>>> _handOfCards = [];
+        protected readonly NamePlayers _typePlayer;
+        private int _currentHand;
+        public NamePlayers TypePlayer => _typePlayer;
 
         public IReadOnlyDictionary<int, IReadOnlyDictionary<CardVisibility, IReadOnlyList<Card>>> HandOfCards
             => _handOfCards.ToDictionary(
@@ -18,26 +20,24 @@ namespace BlackJack.Domain.Entities.Common
                     inner => (IReadOnlyList<Card>)inner.Value
                 )
             );
-        
+
         public int CurrentHand => _currentHand;
         public List<int> AceValues => _aceValues;
-        
+
         public void AddCardToHand(int hand, Card card, CardVisibility visibility)
         {
             if (!_handOfCards.TryGetValue(hand, out var handDict))
             {
                 _handOfCards[hand] = [];
+                handDict = _handOfCards[hand];
             }
 
-            if (handDict == null) return;
             if (!handDict.TryGetValue(visibility, out _))
             {
                 handDict[visibility] = [];
             }
-            else
-            {
-                handDict[visibility].Add(card);
-            }
+
+            handDict[visibility].Add(card);
         }
 
         public void DiscardCardFromHand(int hand, Card card)
@@ -49,11 +49,12 @@ namespace BlackJack.Domain.Entities.Common
 
         public void UpdateVisibilityAllCards()
         {
-            foreach (var hand in _handOfCards.Select(x=>x.Key))
+            foreach (var hand in _handOfCards.Select(x => x.Key))
             {
-                var listVisibleCard = _handOfCards[hand][CardVisibility.Visible];
-                var listHiddenCard = _handOfCards[hand][CardVisibility.Hidden];
-                if (listHiddenCard.Count <= 0) return;
+                _handOfCards[hand].TryGetValue(CardVisibility.Visible, out var listVisibleCard);
+                _handOfCards[hand].TryGetValue(CardVisibility.Hidden, out var listHiddenCard);
+                if (listHiddenCard == null || listHiddenCard.ToArray().Length <= 0) return;
+                listVisibleCard ??= [];
                 _handOfCards[hand][CardVisibility.Visible] = [.. listVisibleCard, .. listHiddenCard];
                 _handOfCards[hand][CardVisibility.Hidden] = [];
             }
@@ -61,10 +62,11 @@ namespace BlackJack.Domain.Entities.Common
 
         public bool AddValueAce(int value)
         {
-            if (!Enumerable.Range(1,11).Contains(value))
+            if (!Enumerable.Range(1, 11).Contains(value))
             {
                 return false;
             }
+
             AceValues.Add(value);
             return true;
         }

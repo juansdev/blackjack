@@ -10,16 +10,28 @@ namespace BlackJack.UI.Helpers;
 
 public static class UiHelper
 {
-    public static Card? ValidateDealTheCard()
+    public static void FullValidateDealTheCard(CardVisibility visibility)
     {
-        var card = Game.DealTheCard(CardVisibility.Visible);
+        var card = ValidateDealTheCard(visibility);
         if (card != null)
         {
             var currentCard = (Card)card;
-            var valueCard = currentCard.GetValue();
-            var valueCardStr = valueCard == 11 ? "?" : valueCard.ToString();
-            Widget.Card(currentCard, valueCardStr);
-            return currentCard;
+            SetValueAceCards([currentCard]);
+        }
+    }
+
+    public static Card? ValidateDealTheCard(CardVisibility visibility)
+    {
+        var card = Game.DealTheCard(visibility);
+        if (card != null)
+        {
+            var actualCard = (Card)card;
+            if (actualCard.Rank == CardRank.As)
+            {
+                AnsiConsole.MarkupLine("[green]Te salio un AS[/]");
+            }
+
+            return (Card)card;
         }
 
         AnsiConsole.MarkupLineInterpolated($"[bold red]✗ No hay más cartas para repartir.");
@@ -33,7 +45,7 @@ public static class UiHelper
             var card = listCards[i];
             var valueCard = card.GetValue();
             var valueCardStr = valueCard == 11 ? "?" : valueCard.ToString();
-            if (card.Rank != CardRank.Ace) continue;
+            if (card.Rank != CardRank.As) continue;
             do
             {
                 int forcedAceValue;
@@ -48,13 +60,16 @@ public static class UiHelper
                     forcedAceValue = random.Next(1, 12);
                 }
 
-                if (Game.DealTheCard(CardVisibility.Visible, card, forcedAceValue) == null) break;
+                if (Game.DealTheCard(CardVisibility.Visible, card, forcedAceValue) != null) break;
             } while (true);
         }
     }
 
     public static void SelectGameOption()
     {
+        AnsiConsole.Clear();
+        Head.MainHead();
+        Widget.ShowPlayerInfoWithCards(Game.Player);
         var arrOptions = new Dictionary<string, int>()
         {
             { "Dividir", 0 },
@@ -63,29 +78,41 @@ public static class UiHelper
             { "Doblar apuesta", 3 },
             { "Rendirse", 4 }
         };
-        var option = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("Elije una opción")
-                .AddChoices(arrOptions.Keys));
         var canPlayerContinueChoose = true;
         while (canPlayerContinueChoose)
         {
+            var option = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("Elije una opción")
+                    .AddChoices(arrOptions.Keys));
             switch (arrOptions[option])
             {
                 case 0:
-                    Divide();
+                    if (Divide())
+                    {
+                        AnsiConsole.Clear();
+                        Head.MainHead();
+                        Widget.ShowPlayerInfoWithCards(Game.Player);
+                    }
+
                     break;
                 case 1:
-                    ValidateDealTheCard();
+                    FullValidateDealTheCard(CardVisibility.Hidden);
+                    AnsiConsole.Clear();
+                    Head.MainHead();
+                    Widget.ShowPlayerInfoWithCards(Game.Player);
                     break;
                 case 2:
                     PlayGame();
                     canPlayerContinueChoose = false;
                     break;
                 case 3:
-                    DuplicateBet();
-                    PlayGame();
-                    canPlayerContinueChoose = false;
+                    if (DuplicateBet())
+                    {
+                        PlayGame();
+                        canPlayerContinueChoose = false;
+                    }
+
                     break;
                 case 4:
                     Surrender();
@@ -103,6 +130,10 @@ public static class UiHelper
     private static void PlayGame()
     {
         Game.PlayCards();
+
+        AnsiConsole.Clear();
+        Head.MainHead();
+        Widget.ShowPlayerInfo();
         AnsiConsole.MarkupLine("[green]Jugaste tus cartas[/]");
         AnsiConsole.MarkupLine("[yellow]El Crupier mostro sus cartas[/]");
         if (!Validations.ValidateIfCrupierHaEnoughScore())
@@ -115,25 +146,39 @@ public static class UiHelper
             } while (!Validations.ValidateIfCrupierHaEnoughScore());
         }
 
+        Widget.ShowAllCards(Game.Player);
+        Widget.ShowAllCards(Game.Crupier);
+
         var listStatus = Game.ValidateWinner();
-        for (int i = 0; i < listStatus.Count; i++)
+        var messageCrupierInfo = $"[yellow]Total puntos del Crupier: {Game.CrupierTotalValue}[/]";
+        for (var i = 0; i < listStatus.Count; i++)
         {
-            var extraInfo = listStatus.Count == 1 ? $"en tu mano {i}" : "";
+            var extraInfo = listStatus.Count > 1 ? $"en tu mano {(i + 1).ToString()}" : "";
+            var messagePlayerInfo =
+                $"[yellow]Total puntos del Jugador {extraInfo}: {Game.EndValuesByHands[i].Sum()}[/]";
             var status = listStatus[i];
             switch (status)
             {
                 case WinnerStatus.Winner:
+                    AnsiConsole.MarkupLine(messageCrupierInfo);
+                    AnsiConsole.MarkupLine(messagePlayerInfo);
                     AnsiConsole.MarkupLine($"[green]Felicidades ganaste {extraInfo}[/]");
                     break;
                 case WinnerStatus.WinnerWithBlackJack:
+                    AnsiConsole.MarkupLine(messageCrupierInfo);
+                    AnsiConsole.MarkupLine(messagePlayerInfo);
                     AnsiConsole.MarkupLine($"[green]Felicidades ganaste con un BlackJack Natural {extraInfo}[/]");
                     break;
                 case WinnerStatus.Loser:
+                    AnsiConsole.MarkupLine(messageCrupierInfo);
+                    AnsiConsole.MarkupLine(messagePlayerInfo);
                     AnsiConsole.MarkupLineInterpolated($"[bold red]Perdiste {extraInfo}[/]");
                     break;
                 case WinnerStatus.Draw:
+                    AnsiConsole.MarkupLine(messageCrupierInfo);
+                    AnsiConsole.MarkupLine(messagePlayerInfo);
                     AnsiConsole.MarkupLineInterpolated(
-                        $"[yellow]Tu y el Curier obtuvieron el mismo puntaje {extraInfo}[/]");
+                        $"[yellow]Tu y el Crupier obtuvieron el mismo puntaje {extraInfo}[/]");
                     break;
                 default:
                     AnsiConsole.MarkupLineInterpolated(
@@ -141,11 +186,9 @@ public static class UiHelper
                     break;
             }
         }
-
-        Dialog.GameOver = true;
     }
 
-    private static void Divide()
+    private static bool Divide()
     {
         var statusAddHand = Game.AddHand();
         switch (statusAddHand)
@@ -153,6 +196,8 @@ public static class UiHelper
             case AddHandStatus.PlayerHasNotEnoughCoins:
                 AnsiConsole.MarkupLineInterpolated(
                     $"[bold red]✗[/] Insuficientes fichas de casino para crear una nueva mano");
+                AnsiConsole.MarkupLineInterpolated(
+                    $"[#FFA500]⚠[/] [yellow]Debes tener la misma cantidad de fichas de tu apuesta original[/]");
                 break;
             case AddHandStatus.PlayerHasNotTwoCards:
                 AnsiConsole.MarkupLineInterpolated(
@@ -160,15 +205,17 @@ public static class UiHelper
                 break;
             case AddHandStatus.Success:
                 AnsiConsole.MarkupLine("[green]✓ Se creo una nueva mano[/]");
-                break;
+                return true;
             default:
                 AnsiConsole.MarkupLineInterpolated(
                     $"[bold red]✗[/] Error inesperado");
                 break;
         }
+
+        return false;
     }
 
-    private static void DuplicateBet()
+    private static bool DuplicateBet()
     {
         var statusDuplicateBet = Game.DuplicateBet();
         switch (statusDuplicateBet)
@@ -179,12 +226,14 @@ public static class UiHelper
                 break;
             case DuplicateBetStatus.Success:
                 AnsiConsole.MarkupLine("[green]✓ Se duplico su apuesta[/]");
-                break;
+                return true;
             default:
                 AnsiConsole.MarkupLineInterpolated(
                     $"[bold red]✗[/] Error inesperado");
                 break;
         }
+
+        return false;
     }
 
     public static bool AskIfWantToPlay()
@@ -210,7 +259,6 @@ public static class UiHelper
 
     private static void Surrender()
     {
-        Dialog.GameOver = true;
         Game.Surrender();
         AnsiConsole.MarkupLine("[green]✓ Se reembolsaron la mitad de tus fichas de casino[/]");
     }

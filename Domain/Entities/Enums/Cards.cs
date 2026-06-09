@@ -1,32 +1,27 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace BlackJack.Domain.Entities.Enums
+﻿namespace BlackJack.Domain.Entities.Enums
+{
+    public enum CardRank
     {
-        public enum CardRank
-        {
-            Ace,
-            Two,
-            Three,
-            Four,
-            Five,
-            Six,
-            Seven,
-            Eight,
-            Nine,
-            Ten,
-            Jack,
-            Queen,
-            King
-        }
-        public enum ShapeCard
-        {
-            Hearts, 
-            Spades, 
-            Diamonds, 
-            Clubs
-        }
+        As,
+        Dos,
+        Tres,
+        Cuatro,
+        Cinco,
+        Seis,
+        Siete,
+        Ocho,
+        Nueve,
+        Dies,
+        Jack,
+        Reina,
+        Rey
     }
+
+    public enum ShapeCard
+    {
+        Corazones,
+        Picas,
+        Diamantes,
+        Treboles
+    }
+}

@@ -9,6 +9,7 @@ namespace BlackJack.Domain.Entities
     public class Player : CommonPlayer, IPlayer
     {
         private readonly Dictionary<FlowCash, List<int>> _casinoChipsLog = [];
+        protected new readonly NamePlayers _typePlayer = NamePlayers.Player;
         private int _casinoChips = 0;
         private int _casinoChipsWagered = 0;
         private bool _hasPlayerDoubledTheBed = false;
@@ -18,6 +19,7 @@ namespace BlackJack.Domain.Entities
         public int CasinoChips => _casinoChips;
         public int CasinoChipsWagered => _casinoChipsWagered;
         public bool HasPlayerDoubledTheBed => _hasPlayerDoubledTheBed;
+        public new NamePlayers TypePlayer => _typePlayer;
 
         public void UpdateCasinoChips(int casinoChips, bool isRefund, bool isDefeat = false)
         {

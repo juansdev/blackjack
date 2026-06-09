@@ -5,27 +5,33 @@ using BlackJack.Domain.Entities.Helpers;
 using BlackJack.Domain.Entities.Interfaces;
 using BlackJack.Domain.Entities.Interfaces.Common;
 using BlackJack.Domain.Entities.Record;
+using BlackJack.UI.Helpers;
 
 namespace BlackJack.Application
     {
     internal class Game
         {
         private static Game? _instance;
-        private static readonly IPlayer _player = new Player();
-        private static readonly ICrupier _crupier = new Crupier();
-        private static readonly List<Card> _deck = [];
 
         private Game()
             {
             CurrentPlayer = NamePlayers.Player;
+            Player = new Player();
+            Crupier = new Crupier();
+            Decks = [];
+            EndValuesByHands = [];
+            CrupierTotalValue = 0;
             GenerateDeck();
             }
 
-        public static IPlayer Player => _player;
-        public static ICrupier Crupier => _crupier;
-        public static NamePlayers CurrentPlayer { get; set; }
+        public static IPlayer Player { get; private set; }
+        public static ICrupier Crupier { get; private set; }
+        public static NamePlayers CurrentPlayer { get; private set; }
 
-        public static List<Card> Decks => _deck;
+        public static List<Card> Decks { get; private set; }
+
+        public static List<List<int>> EndValuesByHands { get; private set; }
+        public static int CrupierTotalValue { get; private set; }
 
         public static void StartGame()
             {
@@ -45,7 +51,7 @@ namespace BlackJack.Application
                     {
                     foreach (CardRank rank in Enum.GetValues<CardRank>())
                         {
-                        _deck.Add(new Card(shape, rank));
+                        Decks.Add(new Card(shape, rank));
                         }
                     }
                 }
@@ -53,23 +59,24 @@ namespace BlackJack.Application
 
         public static AddHandStatus AddHand()
             {
-            int originalBet = Player.CasinoChipsLog[FlowCash.Income][0];
+            Player.CasinoChipsLog.TryGetValue(FlowCash.Expenses, out var listOriginalBet);
+            var originalBet = listOriginalBet != null ? listOriginalBet[0] : 0;
             bool hasPlayerEnoughCoins = originalBet <= Player.CasinoChips;
             IEnumerable<Card> cards = Helper.GetAllCardsFromHand(Player.CurrentHand, Player.HandOfCards).ToList();
 
             if (!(hasPlayerEnoughCoins && cards.Any())) return AddHandStatus.PlayerHasNotEnoughCoins;
 
             bool hasPlayerTwoCardsWithTheSameValue =
-                cards.GroupBy(x => x).Where(g => g.Count() > 1).Select(g => g.Key).Count() > 1;
+                cards.GroupBy(x => x.GetValue()).Count(g => g.Count() > 1) >= 1;
 
             if (!(hasPlayerTwoCardsWithTheSameValue && BetCasinoChips(originalBet)))
                 return AddHandStatus.PlayerHasNotTwoCards;
 
-            int newHand = Player.HandOfCards.Last().Key + 1;
+            int newHand = Player.CurrentHand + 1;
             Player.TranslateLastCardToNewHand(Player.CurrentHand, newHand);
-            DealTheCard(CardVisibility.Hidden);
+            UiHelper.FullValidateDealTheCard(CardVisibility.Hidden);
             Player.ChangeHand(newHand);
-            DealTheCard(CardVisibility.Hidden);
+            UiHelper.FullValidateDealTheCard(CardVisibility.Hidden);
 
             return AddHandStatus.Success;
             }
@@ -99,15 +106,9 @@ namespace BlackJack.Application
             Card? card = aceCard ?? GetCardFromDeck();
             if (card == null) return null;
 
-            ICommonPlayer? current = CurrentPlayer switch
-                {
-                NamePlayers.Player => Player,
-                NamePlayers.Crupier => Crupier,
-                _ => null
-                };
-            if (current == null) return null;
+            ICommonPlayer current = CurrentPlayer == NamePlayers.Player ? Player : Crupier;
             Card actualCard = (Card)card;
-            if (actualCard.Rank == CardRank.Ace)
+            if (actualCard.Rank == CardRank.As)
                 {
                 if (forcedAceValue == null) return actualCard;
                 if (!current.AddValueAce((int)forcedAceValue)) return null;
@@ -125,7 +126,7 @@ namespace BlackJack.Application
             bool hasPlayerEnoughCoins = duplicateBet <= Player.CasinoChips;
             if (!hasPlayerEnoughCoins && BetCasinoChips(duplicateBet))
                 return DuplicateBetStatus.PlayerHasNotEnoughCoins;
-            DealTheCard(CardVisibility.Hidden);
+            UiHelper.FullValidateDealTheCard(CardVisibility.Hidden);
             Player.SetDoubleBet();
             return DuplicateBetStatus.Success;
             }
@@ -148,15 +149,15 @@ namespace BlackJack.Application
 
         private static List<List<int>> GetValuesByHands(ICommonPlayer player)
             {
-            List<List<int>> totalValues = [];
+            List<List<int>> totalValues = []; // [[1,2],[3,4]]
             int currentIndexHand = 0;
+            int indexCardAce = 0;
             foreach (int hand in player.HandOfCards.Keys.ToList())
                 {
                 totalValues.Add([]);
-                int indexCardAce = 0;
                 foreach (Card card in Helper.GetAllCardsFromHand(hand, player.HandOfCards))
                     {
-                    if (card.Rank == CardRank.Ace)
+                    if (card.Rank == CardRank.As)
                         {
                         int aceValue = player.AceValues[indexCardAce];
                         totalValues[currentIndexHand].Add(card.GetValue(aceValue));
@@ -176,19 +177,19 @@ namespace BlackJack.Application
 
         public static List<WinnerStatus> ValidateWinner()
             {
-            List<List<int>> valuesByHands = GetValuesByHands(Player);
+            EndValuesByHands = GetValuesByHands(Player);
+            CrupierTotalValue = GetValuesByHands(Crupier)[0].Sum();
             List<WinnerStatus> listStatus = [];
-            int crupierTotalValue = GetValuesByHands(Crupier)[0].Sum();
             int currentHand = 0;
-            foreach (List<int> valuesByHand in valuesByHands)
+            foreach (List<int> valuesByHand in EndValuesByHands)
                 {
                 int totalValue = valuesByHand.Sum();
-                bool hasPlayerMoreScoreThanCrupier = totalValue > crupierTotalValue;
-                bool hasCrupierMoreScoreThanPlayer = crupierTotalValue > totalValue;
+                bool hasPlayerMoreScoreThanCrupier = totalValue > CrupierTotalValue;
+                bool hasCrupierMoreScoreThanPlayer = CrupierTotalValue > totalValue;
                 bool hasPlayerMoreScoreThan21 = totalValue > 21;
-                bool hasCrupierMoreScoreThan21 = crupierTotalValue > 21;
+                bool hasCrupierMoreScoreThan21 = CrupierTotalValue > 21;
                 bool hasPlayerBlackjackNatural = valuesByHand[0] == 11 && valuesByHand[1] == 10;
-                bool hasPlayerAndCrupierTheSameScore = totalValue == crupierTotalValue;
+                bool hasPlayerAndCrupierTheSameScore = totalValue == CrupierTotalValue;
                 int actualBetByHand = Player.CasinoChipsLog[FlowCash.Expenses][currentHand];
                 if ((hasPlayerMoreScoreThanCrupier || hasCrupierMoreScoreThan21) && !hasPlayerMoreScoreThan21)
                     {
@@ -226,7 +227,7 @@ namespace BlackJack.Application
             for (var i = 0; i < listCards.Count; i++)
                 {
                 var card = listCards[i];
-                if (card.Rank != CardRank.Ace) continue;
+                if (card.Rank != CardRank.As) continue;
                 do
                     {
                     int forcedAceValue;

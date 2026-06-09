@@ -13,7 +13,7 @@ namespace BlackJack.Application.Helpers
                 {
                 var card = cards[i];
                 var value = card.GetValue();
-                if (card.Rank == CardRank.Ace)
+                if (card.Rank == CardRank.As)
                     {
                     var aceValue = Game.Crupier.AceValues[i];
                     value = card.GetValue(aceValue);
